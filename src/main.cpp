@@ -1,98 +1,45 @@
-#include <atomic>
-#include <chrono>
-#include <iostream>
-#include <thread>
-
+#include "settings_window.h"
+#include "controller.h"
 #define NOMINMAX
 #include <Windows.h>
-
-#include <spdlog/sinks/stdout_sinks.h>
-#include <spdlog/spdlog.h>
-
-#include "controller.h"
-#include "keyboard.h"
-#include "mapper.h"
-
-namespace
-{
-constexpr auto connected_poll_interval = std::chrono::milliseconds(4);
-constexpr auto disconnected_poll_interval = std::chrono::milliseconds(250);
-constexpr auto injection_retry_interval = std::chrono::milliseconds(100);
-std::atomic_bool stop_requested = false;
-
-struct SpdLogShutdown
-{
-    SpdLogShutdown() = default;
-    ~SpdLogShutdown()
-    {
-        spdlog::shutdown();
-    }
-};
-
-BOOL WINAPI handle_console_control(DWORD)
-{
-    stop_requested.store(true, std::memory_order_relaxed);
-    return TRUE;
+namespace {
+struct EngineDevices { zeropad::Controller controller; };
+zeropad::Snapshot poll(unsigned index, void* context) {
+    auto& devices = *static_cast<EngineDevices*>(context);
+    devices.controller.poll(index);
+    return devices.controller.snapshot();
 }
-} // namespace
-
-int main()
-{
-    SetConsoleCtrlHandler(handle_console_control, TRUE);
-    SpdLogShutdown spdlog_shutdown;
-    spdlog::stdout_logger_mt("console");
-#ifdef _DEBUG
-    spdlog::set_level(spdlog::level::trace);
-#else
-    spdlog::set_level(spdlog::level::warn);
-#endif
-    spdlog::info("ZeroPad Phase 0\nWaiting for controller...");
-
-    zeropad::Controller controller;
-    zeropad::Mapper mapper;
-    bool was_connected = false;
-    bool failure_reported = false;
-    std::chrono::steady_clock::time_point retry_after = std::chrono::steady_clock::time_point::min();
-
-    while(!stop_requested.load(std::memory_order_relaxed)) {
-        controller.poll();
-        const bool connected = controller.connected();
-        if(connected != was_connected) {
-            if(connected) {
-                std::cout << "\nController connected.\nA -> Space mapping active.\n";
-            } else {
-                std::cout << "\nController disconnected.\nWaiting for controller...\n";
-            }
-            was_connected = connected;
-        }
-
-        const std::optional<bool> action = mapper.update(connected && controller.a_pressed());
-        if(action.has_value() && std::chrono::steady_clock::now() >= retry_after) {
-            const bool success = zeropad::set_space_key(*action);
-            mapper.complete(success);
-            if(!success && !failure_reported) {
-                std::cerr << "SendInput failed; will retry while the desired state differs.\n";
-                failure_reported = true;
-            } else if(success) {
-                failure_reported = false;
-            }
-            if(!success) {
-                retry_after = std::chrono::steady_clock::now() + injection_retry_interval;
-            }
-        }
-
-        std::this_thread::sleep_for(connected ? connected_poll_interval : disconnected_poll_interval);
-    }
-
-    if(const std::optional<bool> release = mapper.update(false); release.has_value()) {
-        if(!zeropad::set_space_key(*release)) {
-            std::cerr << "SendInput failed while releasing Space during shutdown.\n";
+bool output(std::uint16_t key, bool pressed, void*) { return zeropad::send_key(key, pressed, nullptr); }
+bool keys_down(void*) {
+    // High bits represent current state, not the unreliable "pressed since"
+    // bit. Include all keyboard keys so Tab/Enter and dialog activation keys
+    // must also be released before mapping resumes.
+    for (int key = VK_BACK; key < 255; ++key) if (GetAsyncKeyState(key) & 0x8000) return true;
+    return false;
+}
+}
+int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
+    try {
+        std::string diagnostic;
+        const auto path = zeropad::default_config_path(diagnostic);
+        zeropad::Config initial;
+        if (path) initial = zeropad::startup_config(*path, diagnostic);
+        EngineDevices devices;
+        zeropad::EngineService engine(initial, poll, output, keys_down, &devices);
+        const int result = zeropad::run_settings_window(engine, path, diagnostic);
+        engine.stop();
+        const auto status = engine.status();
+        if (status.engine.cleanup_failed) {
+            MessageBoxW(nullptr, L"ZeroPad could not release all submitted keys during shutdown.", L"ZeroPad", MB_OK | MB_ICONERROR);
             return 1;
         }
-        mapper.complete(true);
+        if (result == -1 || status.worker_failed) {
+            MessageBoxW(nullptr, L"ZeroPad could not open the settings window or the input worker stopped unexpectedly.", L"ZeroPad", MB_OK | MB_ICONERROR);
+            return 1;
+        }
+        return 0;
+    } catch (const std::exception&) {
+        MessageBoxW(nullptr, L"ZeroPad could not initialize. No settings changes were requested.", L"ZeroPad", MB_OK | MB_ICONERROR);
+        return 1;
     }
-
-    SetConsoleCtrlHandler(handle_console_control, FALSE);
-    std::cout << "Exiting.\n";
-    return 0;
 }
