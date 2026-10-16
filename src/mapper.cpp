@@ -1,19 +1,23 @@
-#include "zeropad/mapper.hpp"
+/**
+ * @file mapper.cpp
+ */
+#include "mapper.h"
 
-namespace zeropad {
-
-std::optional<bool> Mapper::update(bool a_pressed) const noexcept {
-    if (a_pressed == key_injected_) {
+namespace zeropad
+{
+std::optional<bool> Mapper::update(bool a_pressed) const noexcept
+{
+    if(a_pressed == key_injected_) {
         return std::nullopt;
     }
     return a_pressed;
 }
 
-void Mapper::complete(bool success) noexcept {
+void Mapper::complete(bool success) noexcept
+{
     // Caller invokes this only after an event was requested.
-    if (success) {
+    if(success) {
         key_injected_ = !key_injected_;
     }
 }
-
 } // namespace zeropad

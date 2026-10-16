@@ -8,12 +8,16 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 include(CTest)
 
+set(PROJECT_ROOT ${CMAKE_CURRENT_SOURCE_DIR})
+
 set(HEADERS
+    include/cpptoml.h
 	include/controller.h
     include/keyboard.h
     include/mapper.h
 )
 set(SOURCES
+    src/cpptoml.cpp
     src/controller.cpp
     src/keyboard.cpp
     src/mapper.cpp
@@ -24,7 +28,7 @@ source_group("src" FILES ${SOURCES})
 
 if(WIN32)
     add_executable(${PROJECT_NAME} src/main.cpp ${SOURCES} ${HEADERS})
-    target_include_directories(${PROJECT_NAME} PUBLIC include)
+    target_include_directories(${PROJECT_NAME} PUBLIC ${PROJECT_ROOT}/include)
 
     if(MSVC)
         target_compile_options(${PROJECT_NAME} PRIVATE /W4 /permissive-)
