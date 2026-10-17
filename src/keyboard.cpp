@@ -1,18 +1,15 @@
-/**
- * @file keyboard.cpp
- */
 #include "keyboard.h"
-
 #include <Windows.h>
-
-namespace zeropad
-{
-bool set_space_key(bool pressed) noexcept
-{
+namespace zeropad {
+bool send_key(std::uint16_t key, bool pressed, void*) noexcept {
     INPUT input{};
     input.type = INPUT_KEYBOARD;
-    input.ki.wVk = VK_SPACE;
-    input.ki.dwFlags = pressed ? 0 : KEYEVENTF_KEYUP;
+    input.ki.wVk = key;
+    input.ki.dwExtraInfo = injected_key_tag;
+    const bool extended = (key >= VK_PRIOR && key <= VK_DOWN) ||
+                          key == VK_INSERT || key == VK_DELETE ||
+                          key == VK_RCONTROL || key == VK_RMENU;
+    input.ki.dwFlags = (pressed ? 0u : KEYEVENTF_KEYUP) | (extended ? KEYEVENTF_EXTENDEDKEY : 0u);
     return SendInput(1, &input, sizeof(input)) == 1;
 }
-} // namespace zeropad
+}

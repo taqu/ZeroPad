@@ -1,34 +1,12 @@
-#ifndef INC_ZEROPAD_CONTROLLER_H_
-#define INC_ZEROPAD_CONTROLLER_H_
-/**
- * @file controller.h
- */
-
-namespace zeropad
-{
-class Controller
-{
+#pragma once
+#include "mapper.h"
+namespace zeropad {
+class Controller {
 public:
-    /**
-     * @brief Polling controller inputs
-     */
-    void poll() noexcept;
-
-    /**
-     * @brief Check connection
-     * @return 
-     */
-    [[nodiscard]] bool connected() const noexcept
-    {
-        return connected_;
-    }
-
-    [[nodiscard]] bool a_pressed() const noexcept;
-
+    void poll(unsigned int index = 0) noexcept;
+    bool connected() const noexcept { return snapshot_.connected; }
+    const Snapshot& snapshot() const noexcept { return snapshot_; }
 private:
-    bool connected_ = false;
-    bool a_pressed_ = false;
+    Snapshot snapshot_{};
 };
-
-} // namespace zeropad
-#endif // INC_ZEROPAD_CONTROLLER_H_
+}
