@@ -30,34 +30,79 @@ template <typename Number> bool number(std::wstring_view text, Number& output) n
 }
 bool read_number(std::wstring_view text, int& output) noexcept { return number(text, output); }
 bool read_number(std::wstring_view text, double& output) noexcept { return number(text, output); }
-void EngineCore::suspend() noexcept {
+void EngineCore::update_mode() noexcept {
+    status_.suspended = pauses_ != 0;
+    if (pauses_ & static_cast<unsigned>(PauseReason::Stopping)) status_.mode = MappingMode::Stopping;
+    else if (pauses_ & (static_cast<unsigned>(PauseReason::Recovery) | static_cast<unsigned>(PauseReason::Power) | static_cast<unsigned>(PauseReason::Session)))
+        status_.mode = MappingMode::Recovering;
+    else if (pauses_ & static_cast<unsigned>(PauseReason::Editor)) status_.mode = MappingMode::Capture;
+    else status_.mode = status_.session_override.value_or(status_.config.general.enabled) ? MappingMode::Running : MappingMode::Disabled;
+}
+void EngineCore::block(PauseReason reason, bool enabled) noexcept {
+    const auto bit = static_cast<unsigned>(reason);
+    if (enabled) {
+        if (pauses_ & bit) return;
+        pauses_ |= bit;
+    } else {
+        if (!(pauses_ & bit)) return;
+        pauses_ &= ~bit;
+        pauses_ |= static_cast<unsigned>(PauseReason::Recovery);
+    }
     runtime_.suspend(true);
-    status_.suspended = true;
-    status_.safe = false; // Require a reconciliation step before acknowledging.
+    status_.safe = false;
+    update_mode();
+}
+void EngineCore::suspend() noexcept {
+    block(PauseReason::Editor, true);
+    status_.safe = false;
     status_.resume_blocked = false;
     resuming_ = false;
 }
 void EngineCore::resume(Keyboard::Clock::time_point now) noexcept {
-    if (!status_.suspended) return;
+    if (!(pauses_ & static_cast<unsigned>(PauseReason::Editor))) return;
     resuming_ = true;
     status_.resume_blocked = false;
     resume_deadline_ = now + std::chrono::seconds(2);
 }
+void EngineCore::runtime_enabled(bool enabled) noexcept {
+    if (status_.mode == MappingMode::Stopping) return;
+    status_.session_override = enabled;
+    runtime_.enabled_override(enabled);
+    block(PauseReason::Recovery, true);
+}
+void EngineCore::power(bool suspended) noexcept { block(PauseReason::Power, suspended); }
+void EngineCore::session_locked(bool locked) noexcept { block(PauseReason::Session, locked); }
+void EngineCore::stopping() noexcept {
+    resuming_ = false;
+    block(PauseReason::Stopping, true);
+}
 bool EngineCore::apply(const Config& config, std::uint64_t expected_revision, std::string& error) {
     error = validate_config(config);
     if (!error.empty()) return false;
+    if (status_.mode == MappingMode::Stopping) { error = "Application is stopping."; return false; }
     if (expected_revision != status_.revision) { error = "Active configuration changed; reload the editor before saving."; return false; }
+    if (config == status_.config && !runtime_.transitioning() &&
+        status_.session_override.value_or(config.general.enabled) == config.general.enabled) {
+        status_.session_override.reset();
+        runtime_.enabled_override(std::nullopt);
+        return true; // No effective change, so held keys/hysteresis stay intact.
+    }
     if (!status_.safe || !status_.suspended) { error = "Engine is not safely suspended; release pending keys and retry Save."; return false; }
     if (!runtime_.request_config(config, error)) return false;
+    status_.session_override.reset();
+    runtime_.enabled_override(std::nullopt);
     status_.applying = runtime_.transitioning();
     return true;
 }
 void EngineCore::step(const Snapshot& snapshot, bool physical_keys_down, Keyboard::Clock::time_point now,
                       KeyOutput output, void* context) noexcept {
+    if (status_.connected && !snapshot.connected) block(PauseReason::Recovery, true);
+    status_.connected = snapshot.connected;
     if (resuming_ && !runtime_.held() && !runtime_.transitioning()) {
         if (!physical_keys_down) {
-            runtime_.suspend(false);
-            status_.suspended = false;
+            pauses_ &= ~static_cast<unsigned>(PauseReason::Editor);
+            runtime_.suspend(pauses_ != 0);
+            update_mode();
             resuming_ = false;
         } else if (now >= resume_deadline_) {
             resuming_ = false;
@@ -69,9 +114,16 @@ void EngineCore::step(const Snapshot& snapshot, bool physical_keys_down, Keyboar
     if (runtime_.config() != before) ++status_.revision;
     status_.config = runtime_.config();
     status_.applying = runtime_.transitioning();
+    if ((pauses_ & static_cast<unsigned>(PauseReason::Recovery)) && !runtime_.held() && !runtime_.transitioning()) {
+        pauses_ &= ~static_cast<unsigned>(PauseReason::Recovery);
+        runtime_.suspend(pauses_ != 0);
+        // Deliberately wait for the next fresh poll before any new key-down.
+    }
+    update_mode();
     status_.safe = status_.suspended && !runtime_.held() && !runtime_.transitioning();
 }
 bool EngineCore::release(Keyboard::Clock::time_point now, KeyOutput output, void* context) noexcept {
+    stopping();
     runtime_.release(now, output, context);
     status_.cleanup_failed = runtime_.held();
     return !status_.cleanup_failed;

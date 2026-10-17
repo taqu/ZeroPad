@@ -15,6 +15,8 @@ std::optional<std::uint16_t> captured_key(unsigned vk, unsigned scan, bool exten
 bool read_number(std::wstring_view text, int& output) noexcept;
 bool read_number(std::wstring_view text, double& output) noexcept;
 
+enum class MappingMode { Running, Disabled, Capture, Recovering, Stopping };
+enum class PauseReason : unsigned { Editor = 1, Power = 2, Session = 4, Recovery = 8, Stopping = 16 };
 struct EngineStatus {
     Config config;
     std::uint64_t revision = 0;
@@ -24,11 +26,17 @@ struct EngineStatus {
     bool resume_blocked = false;
     bool injection_failed = false;
     bool cleanup_failed = false;
+    bool connected = false;
+    std::optional<bool> session_override;
+    MappingMode mode = MappingMode::Running;
 };
 // Deterministic engine coordination, also exercised by hardware-free tests.
 class EngineCore {
 public:
-    explicit EngineCore(const Config& initial = {}) : runtime_(initial) { status_.config = initial; }
+    explicit EngineCore(const Config& initial = {}) : runtime_(initial) {
+        status_.config = initial;
+        status_.mode = initial.general.enabled ? MappingMode::Running : MappingMode::Disabled;
+    }
     void suspend() noexcept;
     void resume(Keyboard::Clock::time_point now) noexcept;
     bool apply(const Config& config, std::uint64_t expected_revision, std::string& error);
@@ -37,7 +45,14 @@ public:
     bool release(Keyboard::Clock::time_point now, KeyOutput output, void* context = nullptr) noexcept;
     const EngineStatus& status() const noexcept { return status_; }
     bool waiting_for_physical_release() const noexcept { return resuming_; }
+    void runtime_enabled(bool enabled) noexcept;
+    void power(bool suspended) noexcept;
+    void session_locked(bool locked) noexcept;
+    void stopping() noexcept;
 private:
+    void block(PauseReason reason, bool enabled) noexcept;
+    void update_mode() noexcept;
+    unsigned pauses_ = 0;
     Runtime runtime_;
     EngineStatus status_;
     bool resuming_ = false;

@@ -31,7 +31,7 @@ bool Runtime::tick(const Snapshot& snapshot, Keyboard::Clock::time_point now,
         // The caller must poll again, now using the new controller index.
         return success;
     }
-    mapper_.update(logical_.update(active_.general.enabled && !suspended_ ? snapshot : Snapshot{}));
+    mapper_.update(logical_.update(enabled_override_.value_or(active_.general.enabled) && !suspended_ ? snapshot : Snapshot{}));
     return keyboard_.reconcile(mapper_, now, output, context);
 }
 bool Runtime::release(Keyboard::Clock::time_point now, KeyOutput output, void* context) noexcept {

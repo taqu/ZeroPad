@@ -1,4 +1,5 @@
 #pragma once
+#define IDI_ZEROPAD 200
 #define IDD_SETTINGS 100
 #define IDD_BINDING 101
 #define IDC_CONTROLLER_LABEL 1000

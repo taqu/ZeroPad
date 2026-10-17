@@ -16,6 +16,7 @@ public:
     bool transitioning() const noexcept { return pending_.has_value(); }
     bool held() const noexcept { return keyboard_.held(); }
     void suspend(bool suspended) noexcept;
+    void enabled_override(std::optional<bool> enabled) noexcept { enabled_override_ = enabled; }
 private:
     Config active_;
     std::optional<Config> pending_;
@@ -23,5 +24,6 @@ private:
     Mapper mapper_;
     Keyboard keyboard_;
     bool suspended_ = false;
+    std::optional<bool> enabled_override_;
 };
 }

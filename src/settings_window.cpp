@@ -136,6 +136,7 @@ INT_PTR CALLBACK binding_proc(HWND window, UINT message, WPARAM wparam, LPARAM l
     }
     if (!state) return FALSE;
     switch (message) {
+    case settings_force_close: state->selected.reset(); EndDialog(window, IDCANCEL); return TRUE;
     case WM_COMMAND:
         switch (LOWORD(wparam)) {
         case IDOK: if (state->selected) EndDialog(window, IDOK); return TRUE;
@@ -303,7 +304,14 @@ void begin_save(HWND window, Window& state) {
         error_box(window, error);
         begin_reload(window, state); return;
     }
-    if (unchanged) { EndDialog(window, IDOK); return; }
+    if (unchanged && !state.engine.status().engine.session_override) { EndDialog(window, IDOK); return; }
+    if (unchanged && state.engine.status().engine.session_override == state.candidate.general.enabled) {
+        state.operation = Window::Operation::ApplySave;
+        state.request = state.engine.apply(state.candidate, state.editor.revision());
+        state.deadline = Keyboard::Clock::now() + std::chrono::seconds(1);
+        busy(window, state, true); EnableWindow(GetDlgItem(window, IDCANCEL), FALSE);
+        return;
+    }
     Config persisted;
     if (disk.exists && !parse_config(disk.bytes, persisted, error) &&
         MessageBoxW(window, L"The existing configuration is invalid. Save will replace it with these settings. Continue?", L"ZeroPad", MB_YESNO | MB_ICONWARNING) != IDYES) return;
@@ -336,7 +344,7 @@ void tick(HWND window, Window& state) {
         if (status.resume_blocked) set_text(window, IDC_NOTICE, L"Mapping paused: release keyboard keys, then choose Resume.");
         else if (status.injection_failed) set_text(window, IDC_NOTICE, L"Input submission failed; pending releases will retry.");
         else if (status.suspended) set_text(window, IDC_NOTICE, L"Mapping paused; release keyboard keys or choose Resume.");
-        else set_text(window, IDC_NOTICE, L"Edits take effect only after Save. Closing this window exits ZeroPad.");
+        else set_text(window, IDC_NOTICE, L"Edits take effect after Save. Closing Settings keeps ZeroPad in the tray.");
         return;
     }
     const bool applying = state.operation == Window::Operation::ApplySave || state.operation == Window::Operation::ApplyReload;
@@ -349,7 +357,7 @@ void tick(HWND window, Window& state) {
             }
             const bool saved = state.operation == Window::Operation::ApplySave;
             state.operation = Window::Operation::Idle; EnableWindow(GetDlgItem(window, IDCANCEL), TRUE);
-            if (saved) { EndDialog(window, IDOK); return; }
+            if (saved) { state.engine.resume(); EndDialog(window, IDOK); return; }
             state.editor = SettingsEditor(status, state.reload_disk);
             state.disk_readable = true;
             populate(window, state); busy(window, state, false); state.engine.resume();
@@ -396,6 +404,8 @@ INT_PTR CALLBACK settings_proc(HWND window, UINT message, WPARAM wparam, LPARAM 
     if (message == WM_INITDIALOG) {
         state = reinterpret_cast<Window*>(lparam);
         SetWindowLongPtrW(window, DWLP_USER, lparam);
+        SendMessageW(window, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_ZEROPAD))));
+        SendMessageW(window, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDI_ZEROPAD), IMAGE_ICON, 16, 16, LR_SHARED)));
         update_font(window, state->font);
         for (int i = 1; i <= 4; ++i) {
             const auto label = L"Controller " + std::to_wstring(i);
@@ -425,6 +435,7 @@ INT_PTR CALLBACK settings_proc(HWND window, UINT message, WPARAM wparam, LPARAM 
     }
     if (!state) return FALSE;
     switch (message) {
+    case settings_force_close: state->engine.resume(); state->editor.cancel(); EndDialog(window, IDCANCEL); return TRUE;
     case WM_TIMER: tick(window, *state); return TRUE;
     case WM_SIZE: settings_layout(window); return TRUE;
     case WM_GETMINMAXINFO: {
@@ -451,7 +462,7 @@ INT_PTR CALLBACK settings_proc(HWND window, UINT message, WPARAM wparam, LPARAM 
     case WM_COMMAND:
         if (LOWORD(wparam) == IDCANCEL) {
             if (state->operation == Window::Operation::ApplySave || state->operation == Window::Operation::ApplyReload) return TRUE;
-            state->editor.cancel(); EndDialog(window, IDCANCEL); return TRUE;
+            state->engine.resume(); state->editor.cancel(); EndDialog(window, IDCANCEL); return TRUE;
         }
         if (state->loading || state->operation != Window::Operation::Idle) return FALSE;
         switch (LOWORD(wparam)) {
@@ -475,7 +486,7 @@ INT_PTR CALLBACK settings_proc(HWND window, UINT message, WPARAM wparam, LPARAM 
         SetWindowTextW(window, L"ZeroPad - Settings *"); return TRUE;
     case WM_CLOSE:
         if (state->operation == Window::Operation::ApplySave || state->operation == Window::Operation::ApplyReload) return TRUE;
-        state->editor.cancel(); EndDialog(window, IDCANCEL); return TRUE;
+        state->engine.resume(); state->editor.cancel(); EndDialog(window, IDCANCEL); return TRUE;
     case WM_QUERYENDSESSION: SetWindowLongPtrW(window, DWLP_MSGRESULT, TRUE); return TRUE;
     case WM_ENDSESSION: if (wparam) EndDialog(window, IDCANCEL); return TRUE;
     case WM_DESTROY:
@@ -486,10 +497,10 @@ INT_PTR CALLBACK settings_proc(HWND window, UINT message, WPARAM wparam, LPARAM 
     return FALSE;
 }
 }
-int run_settings_window(EngineService& engine, const std::optional<std::filesystem::path>& path, const std::string& diagnostic) {
+int run_settings_window(EngineService& engine, const std::optional<std::filesystem::path>& path, const std::string& diagnostic, HWND owner) {
     INITCOMMONCONTROLSEX controls{sizeof(controls), ICC_LISTVIEW_CLASSES | ICC_STANDARD_CLASSES};
     if (!InitCommonControlsEx(&controls)) return -1;
     Window state(engine, path, diagnostic);
-    return static_cast<int>(DialogBoxParamW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_SETTINGS), nullptr, settings_proc, reinterpret_cast<LPARAM>(&state)));
+    return static_cast<int>(DialogBoxParamW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(IDD_SETTINGS), owner, settings_proc, reinterpret_cast<LPARAM>(&state)));
 }
 } // namespace zeropad

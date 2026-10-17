@@ -1,6 +1,6 @@
 # ZeroPad
 
-ZeroPad is a lightweight Windows gamepad-to-keyboard utility. Its native settings window configures one XInput controller, all 14 standard buttons, both triggers, and eight stick directions. A maps to Space by default. There is no tray or hidden background mode.
+ZeroPad is a lightweight Windows gamepad-to-keyboard utility. Its native settings window configures one XInput controller, all 14 standard buttons, both triggers, and eight stick directions. A maps to Space by default. Phase 4 keeps mapping active in the Windows notification area.
 
 ## Build and run
 
@@ -13,7 +13,21 @@ ctest --test-dir build -C Release --output-on-failure
 .\build\Release\ZeroPad.exe
 ```
 
-The normal build uses the Windows GUI subsystem. Developer tests remain console executables. Close the settings window, press Cancel, or save successfully to exit ZeroPad and release its held keys.
+The normal build uses the Windows GUI subsystem. Developer tests remain console executables. On launch, ZeroPad creates one tray icon and opens Settings. Closing Settings, pressing Cancel, or saving closes only the editor; mapping keeps running. To stop ZeroPad, right-click its tray icon and choose **Exit**.
+
+## Tray and background operation
+
+Double-click the controller icon or choose **Settings** from its right-click menu to open the editor. An existing editor is restored/focused instead of duplicated. Windows may place the icon in the notification area's overflow menu. If icon registration fails, ZeroPad shows a small Settings/Exit fallback window and retries registration up to three times at five-second intervals. Explorer's `TaskbarCreated` notification restores the icon and tooltip without restarting the engine.
+
+**Disable Mapping** releases held keys and prevents new mapping input. **Enable Mapping** resumes from a fresh controller snapshot. Toggles are session-only: they never write `config.toml`. The saved `general.enabled` value remains the next-start preference; a successful Settings Save or Reload applies that preference and clears the runtime override. The tooltip reflects Enabled, Disabled, paused-for-settings, recovering, or stopping state. Toggle commands are unavailable during capture/recovery and cannot bypass those pauses.
+
+Only one instance runs per interactive Windows session. A second launch requests Settings from the first instance and exits before creating another engine. Communication is limited to opening Settings, with bounded startup/response waits. Mutex creation/access failures and unresponsive instances produce errors; they do not start a competing engine. There is no Windows startup registration.
+
+Disconnection releases keys and clears analog state. Reconnection waits for outstanding releases, samples fresh input, and respects the session's enabled preference. Power suspend and session lock/disconnect block new presses and request cleanup; resume/unlock reconciles old releases before fresh input. Repeated resume notifications are harmless. Desktop checks prevent presses on another input desktop. These are best-effort safeguards: Windows may suspend or terminate the process before cleanup finishes.
+
+**Exit** uses one shutdown path: gate new key-down submissions, release keys with up to five bounded attempts, join the worker, remove the tray icon, close dialogs/windows, and release instance ownership. It also handles Exit during capture or settings activity. Forced termination cannot guarantee key release.
+
+Diagnostics are event-based `OutputDebugStringW` messages, visible to an attached Windows debugger. They cover startup/shutdown, connection and mapping-state changes, injection failures, and recovery/initialization failures. There is no continuous disk log, logging framework, telemetry, or new logging thread.
 
 ## Settings window
 
@@ -30,9 +44,9 @@ Edit the four analog thresholds and polling interval using the ordinary text fie
 - Stick thresholds: finite values with `0 <= release < press <= 1`.
 - Trigger thresholds: integers with `0 <= release < press <= 255`.
 - Polling interval: integer 1–100 ms; default 4 ms. Disconnected polling is 250 ms.
-- **Enable keyboard mapping** edits the enabled setting. Saving `false` suspends controller conversion; re-enable and Save to use it on the next launch.
+- **Enable keyboard mapping** edits the enabled setting. Saving `false` suspends controller conversion; re-enable and Save to resume and retain that preference for future launches.
 
-**Defaults** loads the centralized defaults into the editor. It does not save or change live mappings. **Cancel** and the window close button discard unsaved edits and exit. **Save** validates the entire candidate, safely releases held keys, persists the file, then activates the candidate before closing. While activation is finishing, Cancel/close waits for the result. An unchanged Save does not rewrite the file or generate release/repress events.
+**Defaults** loads the centralized defaults into the editor. It does not save or change live mappings. **Cancel** and the window close button discard unsaved edits and close only Settings. **Save** validates the entire candidate, safely releases held keys, persists the file, then activates the candidate before closing. While activation is finishing, Cancel/close waits for the result. An unchanged Save does not rewrite the file or generate release/repress events unless applying the saved enabled preference changes a session override.
 
 **Reload** discards edits after confirmation and reads the configuration file. Changed settings use the same safe release-first transition. If the file or active revision changed externally before Save, ZeroPad refuses to overwrite it and offers Reload or cancellation. There is no automatic file watcher. Other applications can still race a change between the final file comparison and replacement; this is not a cross-process transaction lock.
 
@@ -99,11 +113,11 @@ Press occurs at or above the press threshold; release occurs at or below the rel
 
 The unchanged [taqu/cpptoml](https://github.com/taqu/cpptoml) reader is pinned to revision `6f064ef6f030713d5ba88eb58f537a3d5aa125f8`, with hashes verified by CMake. See [provenance and license](third_party/cpptoml/PROVENANCE.md). Configuration is limited to 64 KiB, valid UTF-8 without NUL/control bytes, and one level of named tables below the root. Arrays, nested/dotted or quoted field names, multiline strings, and escaped strings are unsupported. Scalar values are limited to 64 bytes. UTF-8 comments are validated and stripped before parsing; an initial UTF-8 BOM is accepted. These restrictions mitigate upstream limitations without claiming complete protection against every malformed input or allocation failure.
 
-## Verification and limitations
+## Verification, performance, and limitations
 
-The MSVC x64 Release and Debug builds and three hardware-free CTest suites cover Phase 0–2 regressions, configuration editing, numeric conversion, canonical key selection, left/right modifier conversion, suspension failures, bounded physical-key resume, revision conflicts, persistence/application failures, duplicate bindings, and synchronized worker shutdown.
+Verified locally: MSVC 19.44 x64 Release and Debug builds succeeded, and all seven CTest suites passed in both configurations (including the two opt-in native smoke suites). Five noninteractive suites cover Phase 0–3 regressions, tray actions/state, safe runtime toggles, disconnect/power/session recovery, in-flight poll shutdown, failed release retries, native icon API failures, session-local mutex ownership, and bounded IPC from an actual second test process.
 
-An optional native dialog smoke suite exercises the actual controls with a mocked engine and a temporary configuration:
+Two opt-in native smoke suites use real settings/tray infrastructure with mock controller and keyboard output and temporary configuration files:
 
 ```powershell
 cmake -S . -B build -A x64 -DZEROPAD_GUI_SMOKE_TESTS=ON
@@ -111,10 +125,12 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-It opens test dialogs and sends window messages; it never calls `SendInput` or touches the user's actual configuration. It checks the binding list, numeric validation, modifier capture, alternative selection, Cancel, Defaults, Clear, Save, and basic layout containment at the current monitor DPI. It is off by default for unattended/headless builds.
+These tests open temporary windows/icons. They verify settings controls, capture/selection, Save/Cancel, background open/close cycles, effective toggles, simulated power/session events, simulated Explorer notifications, and Exit during capture. They never call SendInput or touch the user's actual configuration. The option is off by default for headless/unattended builds.
 
-Physical controller input, real keyboard capture/injection, visual DPI checks at 100/125/150/200%, keyboard-only navigation, and screen-reader behavior remain manually unverified. Production memory/CPU usage has not been measured. There is one input worker, no high-frequency UI redraw, no idle file parsing, and no browser or third-party UI runtime.
+See [Phase 4 performance observations](docs/work/phase4-performance.md) for methods, measured values, and reproduction steps. The measured Release executable was about 280 KiB. The engine-only probe used about 5–10 MiB working set; the full mock tray harness used about 25 MiB working set and 3.7 MiB private committed memory. Short idle samples registered no CPU-time ticks, which does not mean zero CPU use. Real XInput sampling with output suppressed measured about 0.31% of one logical processor. Requested 4 ms polling produced about 15.5 ms median intervals on this machine; disconnected intervals were about 263 ms. No timer-resolution changes were made. The preliminary ~10 MiB full-process resident target was not met by the UI harness.
 
-Windows integrity restrictions and protected applications may reject `SendInput`; success means submission, not guaranteed consumption by an application. Output uses virtual keys, with extended-key flags for navigation and right Control/Alt. Applications requiring scan codes or layout-specific behavior may differ. Controller-generated keys can also operate focused settings controls during normal mapping; use the physical keyboard/mouse for editing and the dedicated suspended dialog for capture.
+A controller was detected by the read-only XInput probe. Physical button behavior, real keyboard capture/injection, actual sleep/hibernate/lock transitions, a real Explorer restart, visual DPI checks at 100/125/150/200%, keyboard-only navigation, and screen-reader behavior remain manually unverified. Simulated message tests do not replace those checks. Production resource use with real injection and physical controller-to-application latency remain unverified.
 
-Normal application shutdown stops the worker and makes up to five release attempts, separated by 100 ms after the first. Unresolved releases are reported. Forced termination, crashes, and Windows shutdown deadlines can prevent cleanup. Phase 3 has no tray, startup integration, multiple profiles/controllers at once, mouse emulation, macros, or key combinations. Phase 2 console commands are replaced by the GUI lifecycle and Reload button.
+Windows integrity restrictions and protected applications may reject SendInput; success means submission, not guaranteed consumption by an application. Virtual-key output may differ in programs requiring scan codes or layout-specific input. Controller-generated keys can also operate focused settings controls during normal mapping; use the suspended binding dialog for capture. If capture resume times out after closing Settings, reopen Settings, release keyboard keys, and choose Resume. A session lock or power-recovery pause cannot be bypassed by Resume or the tray toggle.
+
+There is one input worker and one UI thread. Normal polling performs no file I/O or TOML parsing; diagnostics are reported only on state changes. The application has no startup integration, installer, services, updater, multiple profiles/controllers at once, mouse emulation, macros, or key combinations. Phase 2 console commands are replaced by the GUI/tray lifecycle and Reload button.
