@@ -111,16 +111,15 @@ bool save_config(const std::filesystem::path& path, const Config& config, std::s
 std::optional<std::filesystem::path> default_config_path(std::string& error) {
     error.clear();
 #ifdef _WIN32
-    PWSTR path = nullptr;
-    const HRESULT result = SHGetKnownFolderPath(FOLDERID_LocalAppData, KF_FLAG_DEFAULT, nullptr, &path);
-    if (FAILED(result)) {
-        CoTaskMemFree(path);
-        error = "Cannot resolve LocalAppData (HRESULT " + std::to_string(result) + ")";
+    WCHAR path[MAX_PATH];
+    DWORD result = GetModuleFileNameW(nullptr, path, MAX_PATH);
+    if (result<=0) {
+        error = std::format("Cannot get module path {}", result);
         return std::nullopt;
     }
-    const std::filesystem::path directory(path);
-    CoTaskMemFree(path);
-    return directory / L"ZeroPad" / L"config.toml";
+    std::filesystem::path directory(path);
+    directory = directory.parent_path();
+    return directory / L"config.toml";
 #else
     error = "Known Folder configuration location requires Windows";
     return std::nullopt;
