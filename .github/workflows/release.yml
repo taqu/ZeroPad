@@ -1,0 +1,97 @@
+name: Publish version tag
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.event.deleted == false
+    runs-on: windows-2022
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Configure Windows x64
+        run: cmake -S . -B build -A x64 -DBUILD_TESTING=ON -DZEROPAD_GUI_SMOKE_TESTS=OFF
+      - name: Validate tag against configured source
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: ./tools/validate-release.ps1 -Tag $env:RELEASE_TAG -BuildInfo build/generated/build-info.json
+      - name: Build Release
+        run: cmake --build build --config Release --parallel
+      - name: Test Release
+        run: ctest --test-dir build -C Release --output-on-failure --no-tests=error --output-junit release-tests.xml
+      - name: Package and verify tagged executable
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: ./tools/package.ps1 -BuildDirectory build -OutputDirectory dist -ReleaseTag $env:RELEASE_TAG
+      - name: Retain test evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-test-results
+          path: |
+            build/*-tests.xml
+            build/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Publish verified assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          IS_PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = "dist/ZeroPad-v$env:RELEASE_VERSION-win-x64.zip"
+          $checksum = "$zip.sha256"
+          if (!(Test-Path -LiteralPath $zip) -or !(Test-Path -LiteralPath $checksum)) { throw 'Missing release assets' }
+          $expected = (Get-Content -LiteralPath $checksum -Raw).Split(' ')[0]
+          if ((Get-FileHash -LiteralPath $zip).Hash.ToLowerInvariant() -cne $expected) { throw 'Archive checksum mismatch' }
+          $commit = git rev-parse HEAD
+          if ($LASTEXITCODE) { throw 'Cannot resolve checkout' }
+          # Check the remote tag still resolves to the tested commit (lightweight or annotated).
+          $reference = gh api "repos/$env:GH_REPO/git/ref/tags/$env:RELEASE_TAG"
+          if ($LASTEXITCODE) { throw 'Cannot verify remote tag' }
+          $object = ($reference | ConvertFrom-Json).object
+          for ($depth = 0; $object.type -eq 'tag' -and $depth -lt 16; ++$depth) {
+            $annotation = gh api "repos/$env:GH_REPO/git/tags/$($object.sha)"
+            if ($LASTEXITCODE) { throw 'Cannot resolve annotated remote tag' }
+            $object = ($annotation | ConvertFrom-Json).object
+          }
+          if ($object.type -ne 'commit' -or $object.sha -cne $commit) { throw 'Remote tag changed during build' }
+          $notes = @"
+          ZeroPad $env:RELEASE_VERSION for Windows 11 x64.
+
+          Extract the ZIP and run ZeroPad/ZeroPad.exe. Verify the adjacent SHA-256 file first.
+          This executable is unsigned; Windows may show SmartScreen/publisher warnings.
+          Automated noninteractive tests, executable version/import checks and ZIP extraction passed.
+          Hardware/game compatibility and manual/overnight acceptance are not certified by CI.
+          See the included CHANGELOG, documentation, licenses and BUILD_INFO for details and source provenance.
+          Source commit: $commit
+          "@
+          $notesPath = Join-Path $env:RUNNER_TEMP 'zeropad-release-notes.md'
+          [IO.File]::WriteAllText($notesPath, $notes)
+          $arguments = @('release','create',$env:RELEASE_TAG,$zip,$checksum,'--verify-tag','--target',$commit,'--title',"ZeroPad $env:RELEASE_VERSION",'--notes-file',$notesPath,'--draft')
+          if ($env:IS_PRERELEASE -eq 'true') { $arguments += '--prerelease' }
+          & gh @arguments
+          if ($LASTEXITCODE) { throw 'Release creation/upload failed; no publication attempted' }
+          # Uploads must finish before visibility changes. Existing releases are never overwritten.
+          gh release edit $env:RELEASE_TAG --draft=false
+          if ($LASTEXITCODE) { throw 'Publication failed; inspect the remaining draft' }

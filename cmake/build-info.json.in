@@ -1,5 +1,5 @@
 {
-  "Version": "@PROJECT_VERSION@",
+  "Version": "@ZEROPAD_VERSION@",
   "CompilerId": "@CMAKE_CXX_COMPILER_ID@",
   "CompilerVersion": "@CMAKE_CXX_COMPILER_VERSION@",
   "Generator": "@CMAKE_GENERATOR@",

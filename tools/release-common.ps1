@@ -1,6 +1,17 @@
 # Shared only by the local release scripts. No network access or publication.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+function Get-ReleaseVersion([string]$Tag) {
+    if ($Tag -cnotmatch '\Av(?<core>(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))(?<pre>-(?:alpha|beta|rc)\.(?:0|[1-9][0-9]*))?\z') {
+        throw 'Expected vMAJOR.MINOR.PATCH optionally followed by -alpha.N, -beta.N or -rc.N'
+    }
+    $core = $Matches.core
+    $pre = if ($Matches.ContainsKey('pre')) { $Matches.pre } else { '' }
+    foreach ($part in $core.Split('.')) {
+        if ([decimal]$part -gt 65535) { throw 'Version exceeds Windows 16-bit resource component range' }
+    }
+    [pscustomobject]@{ Version = $Tag.Substring(1); FileVersion = "$core.0"; Prerelease = $pre.Length -gt 0 }
+}
 function Get-BinaryInputs([string]$SourceRoot) {
     $root = (Resolve-Path -LiteralPath $SourceRoot).Path.TrimEnd('\','/')
     $paths = @((Join-Path $root 'CMakeLists.txt'))

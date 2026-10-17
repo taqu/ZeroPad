@@ -20,11 +20,11 @@ jobs:
       - name: Build Release
         run: cmake --build build --config Release
       - name: Test Release
-        run: ctest --test-dir build -C Release --output-on-failure --output-junit release-tests.xml
+        run: ctest --test-dir build -C Release --output-on-failure --no-tests=error --output-junit release-tests.xml
       - name: Build Debug
         run: cmake --build build --config Debug
       - name: Test Debug
-        run: ctest --test-dir build -C Debug --output-on-failure --output-junit debug-tests.xml
+        run: ctest --test-dir build -C Debug --output-on-failure --no-tests=error --output-junit debug-tests.xml
       - name: Package tested Release
         shell: pwsh
         run: ./tools/package.ps1 -BuildDirectory build -OutputDirectory dist
