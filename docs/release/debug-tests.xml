@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Win32-MSBuild"
+	tests="8"
+	failures="0"
+	disabled="0"
+	skipped="0"
+	hostname="LEMON"
+	time="11"
+	timestamp="2026-10-17T10:17:04"
+	>
+	<testcase name="release_stress_tests" classname="release_stress_tests" time="0.342272" status="run">
+		<properties/>
+		<system-out>100 start/stop cycles, 100000 deterministic snapshots with shared mappings and failed output passed
+</system-out>
+	</testcase>
+	<testcase name="mapper_tests" classname="mapper_tests" time="0.0099761" status="run">
+		<properties/>
+		<system-out>All mapping tests passed.
+</system-out>
+	</testcase>
+	<testcase name="config_tests" classname="config_tests" time="0.0736763" status="run">
+		<properties/>
+		<system-out>All configuration tests passed.
+</system-out>
+	</testcase>
+	<testcase name="settings_tests" classname="settings_tests" time="0.0286565" status="run">
+		<properties/>
+		<system-out>All settings tests passed.
+</system-out>
+	</testcase>
+	<testcase name="lifecycle_tests" classname="lifecycle_tests" time="0.467343" status="run">
+		<properties/>
+		<system-out>Lifecycle tests passed.
+</system-out>
+	</testcase>
+	<testcase name="native_lifecycle_tests" classname="native_lifecycle_tests" time="0.0958802" status="run">
+		<properties/>
+		<system-out>Native lifecycle tests passed.
+</system-out>
+	</testcase>
+	<testcase name="gui_smoke_tests" classname="gui_smoke_tests" time="3.7792" status="run">
+		<properties>
+			<property name="cmake_labels" value="interactive"/>
+		</properties>
+		<system-out>Native GUI smoke tests passed. Visual DPI and physical hardware checks remain manual.
+</system-out>
+	</testcase>
+	<testcase name="tray_smoke_tests" classname="tray_smoke_tests" time="7.08353" status="run">
+		<properties>
+			<property name="cmake_labels" value="interactive"/>
+		</properties>
+		<system-out>tray_harness_connected_settings_closed,seconds=3.0077,cpu_one_core_percent=0,working_set_bytes=26476544,private_bytes=3846144
+tray_harness_disconnected_settings_closed,seconds=3.0144,cpu_one_core_percent=0,working_set_bytes=26775552,private_bytes=3878912
+Tray GUI lifecycle smoke tests passed (mocked controller/output). Real sleep and Explorer restarts remain manual.
+</system-out>
+	</testcase>
+</testsuite>

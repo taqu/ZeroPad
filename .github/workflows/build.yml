@@ -1,0 +1,47 @@
+name: Windows build and local package
+on:
+  pull_request:
+  push:
+    branches: [main] # Inspected origin/HEAD: refs/remotes/origin/main.
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - name: Configure
+        run: cmake -S . -B build -A x64 -DZEROPAD_GUI_SMOKE_TESTS=OFF
+      - name: Build Release
+        run: cmake --build build --config Release
+      - name: Test Release
+        run: ctest --test-dir build -C Release --output-on-failure --output-junit release-tests.xml
+      - name: Build Debug
+        run: cmake --build build --config Debug
+      - name: Test Debug
+        run: ctest --test-dir build -C Debug --output-on-failure --output-junit debug-tests.xml
+      - name: Package tested Release
+        shell: pwsh
+        run: ./tools/package.ps1 -BuildDirectory build -OutputDirectory dist
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results
+          path: |
+            build/*-tests.xml
+            build/Testing/Temporary/LastTest.log
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Upload local release candidate
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ZeroPad-win-x64-candidate
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7

@@ -1,0 +1,14 @@
+Release_executable_bytes=531968,logical_processors=20
+scenario_start,working_set_bytes=4464640,private_bytes=1011712,handles=55,threads=4
+scenario_stopped,working_set_bytes=4653056,private_bytes=946176,handles=54,threads=1
+synthetic_connected,seconds=60.0337,cpu_one_core_percent=0.156162,working_set_bytes=4673536,private_bytes=983040,polls=3872,connected_samples=3872,poll_p50_ms=15.4943,poll_p95_ms=16.2766,poll_max_ms=17.2516,sample_to_mock_output_p50_ms=0.0015,sample_to_mock_output_p95_ms=0.0046
+scenario_start,working_set_bytes=4698112,private_bytes=1007616,handles=55,threads=2
+scenario_stopped,working_set_bytes=4689920,private_bytes=978944,handles=54,threads=1
+synthetic_disconnected,seconds=60.0311,cpu_one_core_percent=0.0520564,working_set_bytes=4710400,private_bytes=1015808,polls=230,connected_samples=0,poll_p50_ms=262.729,poll_p95_ms=264.864,poll_max_ms=266.106,sample_to_mock_output_p50_ms=0,sample_to_mock_output_p95_ms=0
+scenario_start,working_set_bytes=4702208,private_bytes=1007616,handles=55,threads=2
+scenario_stopped,working_set_bytes=4694016,private_bytes=978944,handles=54,threads=1
+synthetic_disabled,seconds=60.0409,cpu_one_core_percent=0.104096,working_set_bytes=4714496,private_bytes=1015808,polls=3866,connected_samples=3866,poll_p50_ms=15.4967,poll_p95_ms=16.29,poll_max_ms=17.2208,sample_to_mock_output_p50_ms=0,sample_to_mock_output_p95_ms=0
+scenario_start,working_set_bytes=4702208,private_bytes=1007616,handles=55,threads=6
+scenario_stopped,working_set_bytes=10084352,private_bytes=2179072,handles=153,threads=5
+hardware_xinput_no_injection,seconds=60.0313,cpu_one_core_percent=0.312337,working_set_bytes=10072064,private_bytes=2228224,polls=3861,connected_samples=3861,poll_p50_ms=15.5073,poll_p95_ms=16.2993,poll_max_ms=19.8729,sample_to_mock_output_p50_ms=0,sample_to_mock_output_p95_ms=0
+Memory/CPU describe this engine-only probe, not the full tray GUI. Processing times end at a mock callback, not SendInput or target consumption.

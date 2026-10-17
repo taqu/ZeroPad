@@ -1,0 +1,9 @@
+{
+  "Version": "@PROJECT_VERSION@",
+  "CompilerId": "@CMAKE_CXX_COMPILER_ID@",
+  "CompilerVersion": "@CMAKE_CXX_COMPILER_VERSION@",
+  "Generator": "@CMAKE_GENERATOR@",
+  "Platform": "@CMAKE_GENERATOR_PLATFORM@",
+  "PointerBytes": "@CMAKE_SIZEOF_VOID_P@",
+  "System": "@CMAKE_SYSTEM_NAME@"
+}

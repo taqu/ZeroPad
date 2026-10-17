@@ -29,7 +29,7 @@ bool keys_down(void*) {
     return false;
 }
 }
-int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
+int WINAPI wWinMain(_In_ HINSTANCE, _In_opt_ HINSTANCE, _In_ PWSTR, _In_ int) {
     try {
         zeropad::SingleInstance instance;
         if (instance.result() == zeropad::InstanceResult::Error) {

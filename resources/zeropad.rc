@@ -1,8 +1,39 @@
 #include <windows.h>
 #include <commctrl.h>
 #include "resource.h"
+#include "zeropad_version.h"
 1 RT_MANIFEST "zeropad.manifest"
 IDI_ZEROPAD ICON "zeropad.ico"
+1 VERSIONINFO
+ FILEVERSION ZEROPAD_VERSION_TUPLE
+ PRODUCTVERSION ZEROPAD_VERSION_TUPLE
+ FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+#ifdef _DEBUG
+ FILEFLAGS VS_FF_DEBUG
+#else
+ FILEFLAGS 0
+#endif
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_APP
+ FILESUBTYPE 0
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "ZeroPad controller-to-keyboard utility\0"
+            VALUE "FileVersion", ZEROPAD_FILE_VERSION_STRING "\0"
+            VALUE "InternalName", "ZeroPad\0"
+            VALUE "OriginalFilename", "ZeroPad.exe\0"
+            VALUE "ProductName", "ZeroPad\0"
+            VALUE "ProductVersion", ZEROPAD_VERSION_STRING "\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 1200
+    END
+END
 IDD_SETTINGS DIALOGEX 0, 0, 380, 345
 STYLE DS_SETFONT | WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX
 EXSTYLE WS_EX_APPWINDOW

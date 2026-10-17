@@ -4,6 +4,7 @@
 #define NOMINMAX
 #include <Windows.h>
 #include <Psapi.h>
+#include <TlHelp32.h>
 #include <algorithm>
 #include <filesystem>
 #include <iostream>
@@ -49,16 +50,34 @@ double percentile(std::vector<double> values, double fraction) {
     std::sort(values.begin(), values.end());
     return values[static_cast<std::size_t>((values.size() - 1) * fraction)];
 }
+void resources(const char* phase) {
+    PROCESS_MEMORY_COUNTERS_EX memory{}; memory.cb = sizeof(memory);
+    GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory), sizeof(memory));
+    DWORD handles = 0; GetProcessHandleCount(GetCurrentProcess(), &handles);
+    unsigned threads = 0;
+    const HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (snapshot != INVALID_HANDLE_VALUE) {
+        THREADENTRY32 entry{}; entry.dwSize = sizeof(entry);
+        if (Thread32First(snapshot, &entry)) do {
+            if (entry.th32OwnerProcessID == GetCurrentProcessId()) ++threads;
+        } while (Thread32Next(snapshot, &entry));
+        CloseHandle(snapshot);
+    }
+    std::cout << phase << ",working_set_bytes=" << memory.WorkingSetSize << ",private_bytes=" << memory.PrivateUsage
+              << ",handles=" << handles << ",threads=" << threads << '\n';
+}
 void measure(const char* name, Samples::Kind kind, bool enabled, unsigned seconds) {
     Samples samples; samples.kind = kind;
     Config config; config.general.enabled = enabled;
     const auto start = Keyboard::Clock::now(); const double before = cpu_ms();
     EngineService service(config, Samples::poll, Samples::output, Samples::keys, &samples);
+    resources("scenario_start");
     std::this_thread::sleep_for(std::chrono::seconds(seconds));
     PROCESS_MEMORY_COUNTERS_EX memory{}; memory.cb = sizeof(memory);
     GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory), sizeof(memory));
     const double after = cpu_ms(); const auto finish = Keyboard::Clock::now();
     service.stop();
+    resources("scenario_stopped");
     const auto duration = std::chrono::duration<double>(finish - start).count();
     std::cout << name << ",seconds=" << duration << ",cpu_one_core_percent=" << (after-before)/(duration*10)
               << ",working_set_bytes=" << memory.WorkingSetSize << ",private_bytes=" << memory.PrivateUsage
@@ -79,5 +98,9 @@ int main(int argc, char** argv) {
     measure("synthetic_disconnected", Samples::Disconnected, true, seconds);
     measure("synthetic_disabled", Samples::Synthetic, false, seconds);
     measure("hardware_xinput_no_injection", Samples::Hardware, true, seconds);
+    if (argc > 2) {
+        measure("hardware_repeat_1", Samples::Hardware, true, seconds);
+        measure("hardware_repeat_2", Samples::Hardware, true, seconds);
+    }
     std::cout << "Memory/CPU describe this engine-only probe, not the full tray GUI. Processing times end at a mock callback, not SendInput or target consumption.\n";
 }
